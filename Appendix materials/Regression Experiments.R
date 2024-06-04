@@ -13,6 +13,7 @@ for (scale in scale_seq) {
   print(scale)
   para_vary = list(list(name = "scale", value = scale),
                    list(name = "R", value = 500),
+                   list(name = "est_var", value = FALSE),
                    list(name = "p", value = p),
                    list(name = "beta", 
                         value = c(1, 0, rep(1,20), rep(0, p - 31), rep(-1,9))
@@ -33,6 +34,7 @@ for (rho in rho_seq) {
   print(rho)
   para_vary = list(list(name = "rho", value = rho),
                    list(name = "scale", value = 0.1),
+                   list(name = "est_var", value = FALSE),
                    list(name = "R", value = 500),
                    list(name = "p", value = 100),
                    list(name = "type", value = "dependent"),
@@ -52,6 +54,7 @@ for (influ in influ_seq) {
   para_vary = list(list(name = "rho", value = 0),
                    list(name = "scale", value = 1),
                    list(name = "R", value = 500),
+                   list(name = "est_var", value = FALSE),
                    list(name = "n", value = 15),
                    list(name = "p", value = 20),
                    list(name = "type", value = "independent"),

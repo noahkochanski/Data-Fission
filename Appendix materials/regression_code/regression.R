@@ -215,7 +215,7 @@ experiment_linear = function(para_vary){
       n= n + length(add_influential)
     }
     else{
-      dat = generate_linear(n = n, p = p, beta = beta*scale, type = type, rho = rho,error_type=error_type)
+      dat = generate_linear(n = n, p = p, beta = beta*scale, type = type, rho = rho, error_type=error_type)
     }
     print(dat$cluster)
     if ("masking" %in% methods) {
@@ -301,8 +301,8 @@ experiment_linear = function(para_vary){
     }
     return(list(CIs = CIs, selected = selected, projected = projected))
   }
-  # result_linear = lapply(1:R, wrapper_func)
-  result_linear = mclapply(1:R, wrapper_func, mc.cores = detectCores())
+  result_linear = lapply(1:R, wrapper_func)
+  #result_linear = mclapply(1:R, wrapper_func, mc.cores = detectCores())
   return(result_linear)
 }
 
