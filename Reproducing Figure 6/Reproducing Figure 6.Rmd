@@ -790,6 +790,13 @@ save(result, file=paste("results/regression_linear_influential.Rdata",sep = ""))
 ```{r}
 load("results/regression_linear_influential.Rdata")
 ```
+
+```{r}
+for(i in 1:10){
+  print(result[["2"]][[i]]$selected$masking)
+  print(result[["2"]][[i]]$projected$masking)
+}
+```
 ```{r, eval = F}
 ##
 result[["2"]][[7]]
