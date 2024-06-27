@@ -191,23 +191,6 @@ save(results, file="output/linear_results.Rdata")
 ```
 
 ```{r}
-results[["2"]][[1]]
-```
-```{r}
-listy = list()
-listy[[1]] = matrix(1:10, ncol = 2)
-listy[[2]] = matrix(11:20, ncol = 2)
-listy[[3]] = matrix((11:20)*2, ncol = 2)
-sapply(listy, FUN = function(x){return(x[,2] - x[,1])}) |> array() |> 
-  na.omit() |>
-  mean()
-```
-
-```{r}
-ncol(NA)
-```
-
-```{r}
 get_CI_length = function(x, type){
   if(is.atomic(x)){
     return(NA)
