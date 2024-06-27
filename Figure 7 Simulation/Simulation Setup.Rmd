@@ -200,32 +200,28 @@ get_CI_length = function(x, type){
   }
   return(x$CIs[[type]][,2] - x$CIs[[type]][,1])
 }
-lev = c()
-CI = c()
-i = 1
+CI = list()
 for(influ in influence_seq){
-  print(i)
-  lev[i] = influ
+  CI[[as.character(influ)]] = c(0,0,0,0)
   temp = sapply(results[[as.character(influ)]], get_CI_length, type = "masking") |> array() |> 
     unlist() |>
     na.omit() |>
     mean()
-  print(temp)
+  CI[[as.character(influ)]][1] = temp
   temp = sapply(results[[as.character(influ)]], get_CI_length, type = "full") |> array() |> 
     unlist() |>
     na.omit() |>
     mean()
-  print(temp)
+ CI[[as.character(influ)]][2] = temp
   temp = sapply(results[[as.character(influ)]], get_CI_length, type = "split") |> array() |> 
     unlist() |>
     na.omit() |>
     mean()
-  print(temp)
+  CI[[as.character(influ)]][3] = temp
   temp = sapply(results[[as.character(influ)]], get_CI_length, type = "my_split") |> array() |> 
     unlist() |>
     na.omit() |>
     mean()
-  print(temp)
-  i = i + 1
+  CI[[as.character(influ)]][4] = temp
 }
 ```
