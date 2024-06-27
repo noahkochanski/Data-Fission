@@ -1,0 +1,248 @@
+---
+title: "Simulation Set up"
+author: "Kevin Jin"
+output: html_document
+mathjax: "https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-AMS-MML_HTMLorMML"
+header-includes:
+   - \usepackage{amsmath}
+   - \usepackage{mathcal}
+   - \underset{x}{\operatorname{argmax}}
+   - \DeclareMathOperator*{\argmin}{arg\,min}
+---
+
+# Data Fission
+
+## Conducting Inference
+
+We conduct inference on some vector $Y$ given a set of covariates $X$ and a known covariance matrix  $\Sigma = \sigma^2I_n$ as follows: 1. Decompose $y_i$ into $f(y_i) = y_i - Z_i$ and $g(y_i) = y_i + Z_i$ where $Z_i\sim\mathcal{N}(0,\sigma^2)$ 2. Fit $f(y_i)$ using LASSO to select features, denoted as $M\subseteq [p]$ (tuning parameter $\lambda$ by 1 standard deviation rule) 3. Fit $g(y_i)$ by linear regression without regularization using only the selected features. 4. Construct CIs for the coeffecients trained in step 3. each at level $\alpha$ using Theorem 2.
+
+### Theorem 2
+
+Let $$\hat\beta(M) = \argmin_{\tilde\beta} = || g(Y) - X_M\tilde\beta||^2 = \left( X_M^\top X_M \right)^{-1} X_M^\top g(Y)$$
+
+and for $\mu = \mathbb{E}[Y\mid X]\in\mathbb{R}^n$ (which is a fixed unknown quantity),
+
+$$\beta^*(M) = \argmin_{\tilde\beta} = \mathbb{E}\left[ || Y - X_M\tilde\beta ||^2 \right] = \left( X_M^\top X_M \right)^{-1} X_M^\top \mu.$$
+
+Then,
+
+$$\hat\beta(M) \sim \mathcal{N} \left( \beta^*(M), \left( 1 +\tau^{-2} \right)\left( X_M^\top X_M\right)^{-1} X_M^\top \Sigma X_M \left( X_M^\top X_M\right)^{-1} \right)$$
+
+Furthermore, we can form a $1-\alpha$ CI for the $k$th element of $\beta^*(M)$ as
+
+$$\hat\beta(M)\pm z_{\alpha/2}\sqrt{\left( 1 + \tau^{-2} \right) \left[ \left( X^\top_M X_M\right)^{-1} X_M^\top\Sigma X_M \left( X_M^\top X_M\right)^{-1} \right]_{kk} }$$
+
+## Simulation Setup:
+
+"We choose $\sigma^2 = 1$ and generate $n = 16$ data points with $p = 20$ covariates. For the first 15 data points, we have an associated vector of covariates $x_i\in\mathbb{R}^p$ generated from independent Gaussians. The last data point, which we denote $x_\text{lev}$, is generated in such a way as to ensure it is likely to be more influential than the remaining observations due to having much larger leverage. We define
+
+$$x_\text{lev} = \gamma\left( \vert X_1 \vert_\infty, \dots, \vert X_p \vert_\infty \right)$$
+
+where $X_k$ denotes the the k-th column vector of the model design matrix $X$ formed from the first 15 data points and $\gamma$ is a parameter that we will vary within these simulations that reflects the degree to which the last data point has higher leverage than the first set of data points. We then construct $y_i\sim\mathcal{N}\left( \beta^\top x_i,\sigma^2 \right)$. The parameter $\beta$ is nonzero for 4 features: $(\beta_{1}, \beta_{16}, \beta_{17}, \beta_{18}) = S_\Delta(1,1,-1,1)$ where $S_\Delta$ encodes signal strength."
+
+We use 500 repetitions and summarize performance as follows. For the selection stage, we compute the power (defined as $\frac{\vert j\in M:\beta_j\neq0\vert}{\vert j\in[p]:\beta_j\neq0\vert}$) and precision (defined as $\frac{\vert j\in M:\beta_j\neq0\vert}{\vert M\vert}$) of selecting features with a nonzero parameter. For inference, we use the false coverage rate (defined as $\frac{\vert k\in M:[\beta^*(M)]_k\not\in \text{CI}_k  \vert }{\max\{ \vert M \vert ,1 \}}$) where $\text{CI}_k$ is the CI for $[\beta^*(M)]_k$. We also track the average CI length within the selected model.
+
+
+
+## Simulation Code
+```{r, setup_code}
+#### Modified From the Original Source
+library(glmnet)
+generate_linear <- function(n, p, beta,add_influential = c()){
+  X = matrix(rnorm(n = n*p, sd = 1), ncol = p)
+  Sigma = diag(rep(1, p))
+  if(length(add_influential)>0) {
+    baseline = apply(X,2,max)
+    for(i in 1:length(add_influential)){
+      mult = add_influential[i]
+      X=rbind(X,mult*baseline)
+    }
+  }
+  Y = rnorm(n+length(add_influential)) + X%*%beta
+  sd = 1
+  cluster = factor(1:(n+length(add_influential)))
+  return(list(X = X, Y = Y, cluster = cluster, Sigma = Sigma,sd=sd))
+}
+
+experiment_linear <- function(n, p, beta, add_influential = c(), alpha = 0.05,verbose = FALSE){
+  scale = 1
+  CIs = list()
+  selected = list()
+  projected = list()
+
+  data = generate_linear(n = n,
+                         p = p,
+                         beta = beta,
+                         add_influential = add_influential)
+  n_true = n + length(add_influential)
+  
+  #-----------------------Masking Code-----------------------------------------#
+  noise = rnorm(n_true, mean = 0, sd = data$sd)
+  g_Y = data$Y + noise
+  h_Y = data$Y - noise
+  
+  select_model = cv.glmnet(data$X, g_Y, family = "gaussian")
+  selected[["masking"]] = which(coef(select_model, s = 'lambda.1se') != 0)[-1] - 1
+  
+  if (length(selected[["masking"]]) > 0) {
+    infer_model = lm(h_Y ~ data$X[,selected[["masking"]]])
+    temp = clubSandwich::conf_int(infer_model, vcov = "CR2", 
+                                  cluster = data$cluster, level = 1 - alpha)[-1,]
+    CIs[["masking"]] = cbind(temp[,5],temp[,6])
+      
+    projected[["masking"]] = beta[selected[["masking"]]]*scale +
+      scale*beta[-selected[["masking"]]] %*% 
+      data$Sigma[-selected[["masking"]], selected[["masking"]]] %*%
+      solve(data$Sigma[selected[["masking"]], selected[["masking"]]]) 
+  } 
+  else {
+    CIs[["masking"]] = NA;  projected[["masking"]] = NA; selected[["masking"]] = NA
+  }
+  ##############################################################################
+  #-----------------------Full Data Code---------------------------------------#
+  select_model = cv.glmnet(data$X, data$Y, family = "gaussian")
+  selected[["full"]] = which(coef(select_model, s = 'lambda.1se') != 0)[-1] - 1
+  if (length(selected[["full"]]) > 0) {
+    infer_model = lm(data$Y ~ data$X[,selected[["full"]]])
+    temp = clubSandwich::conf_int(infer_model, vcov = "CR2", 
+                                  cluster = data$cluster, level = 1 - alpha)[-1,]
+    CIs[["full"]] = cbind(temp[,5],temp[,6])
+    projected[["full"]] = beta[selected[["full"]]]*scale +
+      scale*beta[-selected[["full"]]] %*% 
+      data$Sigma[-selected[["full"]], selected[["full"]]] %*%
+      solve(data$Sigma[selected[["full"]], selected[["full"]]])
+
+  } else{
+    CIs[["full"]] = NA;  projected[["full"]] = NA; selected[["full"]] = NA
+  }
+  ##############################################################################
+  #-----------------------Train/Test Split-------------------------------------#
+  split_ind = rbinom(n_true, 1, 1/2)
+  select_model = cv.glmnet(data$X[split_ind == 1,], data$Y[split_ind == 1], family = "gaussian")
+  selected[["split"]] = which(coef(select_model, s = 'lambda.1se') != 0)[-1] - 1
+
+  selected[["split"]] = which(coef(select_model, s = 'lambda.1se') != 0)[-1] - 1
+  if (length(selected[["split"]]) > 0) {
+    infer_model = lm(data$Y[split_ind == 0] ~ data$X[split_ind == 0,selected[["split"]]])
+    temp = clubSandwich::conf_int(infer_model, vcov = "CR2", 
+                                  cluster = factor(1:(n_true - sum(split_ind))), level = 1 - alpha)[-1,]
+    CIs[["split"]] = cbind(temp[,5],temp[,6])
+    projected[["split"]] = beta[selected[["split"]]]*scale +
+      scale*beta[-selected[["split"]]] %*% 
+      data$Sigma[-selected[["split"]], selected[["split"]]] %*%
+      solve(data$Sigma[selected[["split"]], selected[["split"]]])
+
+  } else{
+    CIs[["split"]] = NA;  projected[["split"]] = NA; selected[["split"]] = NA
+  }
+  ##############################################################################
+  #-----------------------My Train/Test Split----------------------------------#
+  if(verbose){
+    print(split_ind)
+    print(sum(split_ind))
+  }
+  if(sum(split_ind) < n_true/2){
+    split_ind_0_idxs = split_ind == 0
+    split_ind_1_idxs = split_ind ==1
+    split_ind[split_ind_0_idxs] = 1
+    split_ind[split_ind_1_idxs] = 0
+    
+  
+    select_model = cv.glmnet(data$X[split_ind == 1,], data$Y[split_ind == 1], family = "gaussian")
+    selected[["my_split"]] = which(coef(select_model, s = 'lambda.1se') != 0)[-1] - 1
+  
+    selected[["my_split"]] = which(coef(select_model, s = 'lambda.1se') != 0)[-1] - 1
+    if (length(selected[["my_split"]]) > 0) {
+      infer_model = lm(data$Y[split_ind == 0] ~ data$X[split_ind == 0,selected[["my_split"]]])
+      temp = clubSandwich::conf_int(infer_model, vcov = "CR2", 
+                                    cluster = factor(1:(n_true - sum(split_ind))), level = 1 - alpha)[-1,]
+      CIs[["my_split"]] = cbind(temp[,5],temp[,6])
+      projected[["my_split"]] = beta[selected[["my_split"]]]*scale +
+        scale*beta[-selected[["my_split"]]] %*% 
+        data$Sigma[-selected[["my_split"]], selected[["my_split"]]] %*%
+        solve(data$Sigma[selected[["my_split"]], selected[["my_split"]]])
+  
+    } else{
+      CIs[["my_split"]] = NA;  projected[["my_split"]] = NA; selected[["my_split"]] = NA
+    }
+  } else{
+    CIs[["my_split"]] = CIs[["split"]]; projected[["my_split"]] = projected[["split"]]; selected[["my_split"]] = selected[["split"]]
+  }
+  ##############################################################################
+  return(list(CIs = CIs, selected = selected, projected = projected))
+}
+```
+
+```{r, warning = FALSE, eval = FALSE}
+library(parallel)
+set.seed(2303)
+runs = 1000
+n = 15
+p = 20
+beta = c(1, rep(0,15),1,-1,1,0)
+results = list()
+influence_seq = c(2:6)
+for(influ in influence_seq){
+  print(influ)
+  results[[as.character(influ)]] = mclapply(1:runs, experiment_linear, n = n, p = p, beta = beta, alpha = 0.05, add_influential = c(influ),
+         mc.cores = detectCores(),mc.preschedule = FALSE)
+}
+save(results, file="output/linear_results.Rdata")
+```
+
+```{r}
+results[["2"]][[1]]
+```
+```{r}
+listy = list()
+listy[[1]] = matrix(1:10, ncol = 2)
+listy[[2]] = matrix(11:20, ncol = 2)
+listy[[3]] = matrix((11:20)*2, ncol = 2)
+sapply(listy, FUN = function(x){return(x[,2] - x[,1])}) |> array() |> 
+  na.omit() |>
+  mean()
+```
+
+```{r}
+ncol(NA)
+```
+
+```{r}
+get_CI_length = function(x, type){
+  if(is.atomic(x)){
+    return(NA)
+  }
+  if(length(x$CIs[[type]]) == 1){
+    return(NA)
+  }
+  return(x$CIs[[type]][,2] - x$CIs[[type]][,1])
+}
+lev = c()
+CI = c()
+i = 1
+for(influ in influence_seq){
+  print(i)
+  lev[i] = influ
+  temp = sapply(results[[as.character(influ)]], get_CI_length, type = "masking") |> array() |> 
+    unlist() |>
+    na.omit() |>
+    mean()
+  print(temp)
+  temp = sapply(results[[as.character(influ)]], get_CI_length, type = "full") |> array() |> 
+    unlist() |>
+    na.omit() |>
+    mean()
+  print(temp)
+  temp = sapply(results[[as.character(influ)]], get_CI_length, type = "split") |> array() |> 
+    unlist() |>
+    na.omit() |>
+    mean()
+  print(temp)
+  temp = sapply(results[[as.character(influ)]], get_CI_length, type = "my_split") |> array() |> 
+    unlist() |>
+    na.omit() |>
+    mean()
+  print(temp)
+  i = i + 1
+}
+```
